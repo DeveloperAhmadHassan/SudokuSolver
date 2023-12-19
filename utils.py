@@ -52,25 +52,16 @@ def find_puzzle(image):
     #       cv2.bitwise_not(image)
     #       cv2.adaptiveThreshold(threshold_type = cv2.THRESH_BINARY_INV)
     inv_thresh = cv2.bitwise_not(thresh)
-    # if debug:
-    #     cv2.imshow("Puzzle Thresh", inv_thresh)
-    #     # cv2.imshow("Inverted Puzzle Thresh", inv_thresh1)
-    #     # cv2.imshow("Inverted Puzzle Thresh 2", inv_thresh2)
-    #     if cv2.waitKey(0) & 0xff == 27:
-    #         cv2.destroyAllWindows()
 
     # CODE_EXP: Getting the outline of all the objects in the image
     #   cv2.findContours(image_copy, mode, method)
     #   returns contours(the outlines) and hierarchy(***NO IDEA ABOUT THIS***)
     contours, hierarchy = cv2.findContours(inv_thresh.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    # print(contours)
-    # contours = imutils.grab_contours(contours)
 
     # CODE_EXP: Sort the contours in descending order(reverse=True) to get the largest values on top
     #   The largest values represent the (big)box lines
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
-    # initialize a contour that corresponds to the puzzle outline
     borderContours = None
 
     # INFO: The code below is a result of EXTREME HIT and TRIAL
@@ -84,36 +75,21 @@ def find_puzzle(image):
             borderContours = curve
             print(curve)
             break
-    # if the puzzle contour is empty then our script could not find
-    # the outline of the Sudoku puzzle so raise an error
-    # if puzzleCnt is None:
-    #     raise Exception(("Could not find Sudoku puzzle outline. "
-    #                      "Try debugging your thresholding and contour steps."))
-    # check to see if we are visualizing the outline of the detected
-    # Sudoku puzzle
-    if debug:
-        # draw the contour of the puzzle on the image and then display
-        # it to our screen for visualization/debugging purposes
-        output = image.copy()
-        # CODE_EXP: cv2.drawContours(image_to_draw_on, contours, starting_index, color(B,G,R), thickness_of_lines)
-        cv2.drawContours(output, [borderContours], -1, (0, 0, 255), 2)
-        # cv2.drawContours(output, contours, -1, (0, 0, 255), 2)
-        # cv2.imshow("Puzzle Outline", output)
-        # cv2.imwrite('output/output.jpg', output)
-        # cv2.imshow("Inverted Image", inv_thresh)
-        cv2.waitKey(0)
+
+    # if debug:
+    #     output = image.copy()
+    #     # CODE_EXP: cv2.drawContours(image_to_draw_on, contours, starting_index, color(B,G,R), thickness_of_lines)
+    #     cv2.drawContours(output, [borderContours], -1, (0, 0, 255), 2)
+    #     cv2.waitKey(0)
 
     # INFO:
 
     # CODE_EXP: four_point_transform(image, xy_coordinates_of_four_points)
     #   borderContours.reshape(4, 2): This transforms the array into a 4 rows, 2 columns array; Representing x and y
-    puzzle = four_point_transform(image, borderContours.reshape(4, 2))
-    warped = four_point_transform(grayImage, borderContours.reshape(4, 2))
+    transformedPuzzle = four_point_transform(image, borderContours.reshape(4, 2))
+    threshImage = four_point_transform(grayImage, borderContours.reshape(4, 2))
 
-    # cv2.imshow("Puzzle Transform", warped)
-    # cv2.waitKey(0)
-
-    return puzzle, warped
+    return transformedPuzzle, threshImage
 
 
 def extract_digit(cell):
@@ -157,12 +133,11 @@ def extract_digit(cell):
     return digit
 
 
-#################################################
 def solvePuzzle(imagePathFromAPI):
     model = load_model('output/digit_classifier.keras')
     board = np.zeros((9, 9), dtype="int")
 
-    imagePath = 'uploads/ipofdevice_image6.png'
+    imagePath = 'uploads/' + imagePathFromAPI
     # CODE_EXP: Getting the 'actual image' from the image path
     image = cv2.imread(imagePath)
     image = imutils.resize(image, width=1600)
@@ -184,6 +159,7 @@ def solvePuzzle(imagePathFromAPI):
     # DEBUG: print(f"ShapeY: {warped.shape[0]} - StepY : {warped.shape[0] // 9}")
 
     cellLocs = []
+    digitLocs = []
 
     # loop over the grid locations
     for y in range(0, 9):
@@ -199,12 +175,14 @@ def solvePuzzle(imagePathFromAPI):
             #     print(f"StartX: {startX} - startY: {startY}")
             #     print(f"endX: {endX} - endY: {endY}")
             #     print("")
+
             # CODE_EXP: 0 + x, x + x, x + x + x,.........
             row.append((startX, startY, endX, endY))
             cell = warped[startY:endY, startX:endX]
             # DEBUG:
             #     cv2.imshow("Cell", cell)
             #     cv2.waitKey(0)
+
             # CODE_EXP: Getting the digit cell
             #   There should be nothing else in the returned photo (no noise, no lines, no borders)
             #   Only the digit, in inverse thresh
@@ -219,17 +197,36 @@ def solvePuzzle(imagePathFromAPI):
 
                 predictedDigit = model.predict(imageForModel).argmax(axis=1)[0]
                 print(predictedDigit)
+
                 # CODE_EXP: Store the Predicted Digit in the board
                 #   This board will be used to solve the puzzle, once filled
                 #   Empty spaces in the board need to empty
                 board[y, x] = predictedDigit
-
+                digitLocs.append((startX, startY, endX, endY))
         cellLocs.append(row)
 
-    print("[INFO] OCR'd Sudoku board:")
+    print("[Sudoku board:")
     puzzle = Sudoku(3, 3, board=board.tolist())
     puzzle.show()
-    # solve the Sudoku puzzle
-    print("[INFO] solving Sudoku puzzle...")
+
+    # DEBUG: print(len(digitLocs))
+    # DEBUG: print(digitLocs)
+
+    print("Solved Sudoku Board")
     solution = puzzle.solve()
     solution.show_full()
+
+    for (cellRow, boardRow) in zip(cellLocs, solution.board):
+        for (box, digit) in zip(cellRow, boardRow):
+            # DEBUG: print(box)
+            if not digitLocs.__contains__(box):
+                startX, startY, endX, endY = box
+                textX = int((endX - startX) * 0.33)
+                textY = int((endY - startY) * -0.2)
+                textX += startX
+                textY += endY
+                cv2.putText(puzzleImage, str(digit), (textX, textY), cv2.FONT_ITALIC, 5, (0, 255, 0), 7)
+
+    # DEBUG: cv2.imshow("Sudoku Result", puzzleImage)
+    cv2.imwrite("solvedPuzzles/"+'solved_'+imagePathFromAPI, puzzleImage)
+    return True

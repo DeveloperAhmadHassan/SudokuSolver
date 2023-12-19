@@ -1,6 +1,7 @@
 import os
 
-from flask import Flask, request, flash
+import cv2
+from flask import Flask, request, flash, Response, send_file
 from werkzeug.utils import secure_filename
 
 from utils import solvePuzzle
@@ -41,15 +42,16 @@ def uploadPuzzle():
         filename = request.form.get('ip')+'_'+filename
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         print(filename)
-        solvePuzzle(UPLOAD_FOLDER + '/' + filename)
-        return "Done!"
+        solvePuzzle(filename)
+        image = "solvedPuzzles/solved_"+filename
+        return send_file(image, mimetype="image/png", as_attachment=True), 200
 
 
 if __name__ == '__main__':
     # print(keywords)
     # print("Hello World!")
     # find_puzzle(imagePath='image.webp')
-    app.run(debug=True, port=48274)
+    app.run(debug=True, port=48274, host="192.168.56.1")
     # find_puzzle('image.webp')
 
 
